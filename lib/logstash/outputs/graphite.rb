@@ -43,7 +43,7 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
   # An array indicating that these event fields should be treated as metrics
   # and will be sent verbatim to Graphite. You may use either `fields_are_metrics`
   # or `metrics`, but not both.
-  config :fields_are_metrics, :validate => :boolean, :default => false
+  config :fields_are_metrics, :validate => :array, :default => [ false ]
 
   # Include only regex matched metric names.
   config :include_metrics, :validate => :array, :default => [ ".*" ]
@@ -92,12 +92,12 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
     end
   end # def connect
 
-  def construct_metric_name(metric)
+  def construct_metric_name(metric, event)
     if @metrics_format
-      return @metrics_format.gsub(METRIC_PLACEHOLDER, metric)
+      metric = @metrics_format.gsub(METRIC_PLACEHOLDER, metric)
     end
 
-    metric
+    event.sprintf(metric)
   end
 
   public
@@ -108,14 +108,20 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
 
     messages = []
     timestamp = event[@timestamp_field].to_i
+    source_field = @fields_are_metrics[0]
 
-    if @fields_are_metrics
+    if @source_field
       @logger.debug("got metrics event", :metrics => event.to_hash)
-      event.to_hash.each do |metric,value|
+      event_source = if @source_field.is_a? String then event[@source_field] else event.to_hash end
+      if !event_source || event_source.empty?
+        @logger.warn("Event data is empty", :event => event.to_hash, :source_field => @source)
+        return
+        end
+      event_source.each do |metric,value|
         next if EXCLUDE_ALWAYS.include?(metric)
         next unless @include_metrics.empty? || @include_metrics.any? { |regexp| metric.match(regexp) }
         next if @exclude_metrics.any? {|regexp| metric.match(regexp)}
-        messages << "#{construct_metric_name(metric)} #{event.sprintf(value.to_s).to_f} #{timestamp}"
+        messages << "#{construct_metric_name(metric, event)} #{event.sprintf(value.to_s).to_f} #{timestamp}"
       end
     else
       @metrics.each do |metric, value|
@@ -123,7 +129,7 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
         metric = event.sprintf(metric)
         next unless @include_metrics.any? {|regexp| metric.match(regexp)}
         next if @exclude_metrics.any? {|regexp| metric.match(regexp)}
-        messages << "#{construct_metric_name(event.sprintf(metric))} #{event.sprintf(value).to_f} #{timestamp}"
+        messages << "#{construct_metric_name(metric, event)} #{event.sprintf(value).to_f} #{timestamp}"
       end
     end
 
