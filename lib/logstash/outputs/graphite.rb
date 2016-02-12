@@ -118,9 +118,9 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
     # Graphite message format: metric value timestamp\n
 
     if @metrics_container != ''
-      metrics_source = event[source_field]
+      metrics_source = event[metrics_container]
       if !event_source || event_source.empty?
-        @logger.warn("Event data is empty", :event => event.to_hash, :source_field => source_field)
+        @logger.warn("Event data is empty", :event => event.to_hash, :metrics_container => metrics_container)
         return
       end
     else
