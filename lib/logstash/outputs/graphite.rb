@@ -119,7 +119,7 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
 
     if @metrics_container != ''
       metrics_source = event[metrics_container]
-      if !event_source || event_source.empty?
+      if !metrics_source || metrics_source.empty?
         @logger.warn("Event data is empty", :event => event.to_hash, :metrics_container => metrics_container)
         return
       end
