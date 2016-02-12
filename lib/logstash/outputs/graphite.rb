@@ -45,6 +45,8 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
   # or `metrics`, but not both.
   config :fields_are_metrics, :validate => :boolean, :default => false
 
+  config :metrics_container, :validate => :string, :default => ""
+
   # Include only regex matched metric names.
   config :include_metrics, :validate => :array, :default => [ ".*" ]
 
@@ -115,11 +117,21 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
   def receive(event)
     # Graphite message format: metric value timestamp\n
 
+    if @metrics_container != ''
+      metrics_source = event[source_field]
+      if !event_source || event_source.empty?
+        @logger.warn("Event data is empty", :event => event.to_hash, :source_field => source_field)
+        return
+      end
+    else
+      metrics_source = event
+    end
+
     # compact to remove nil messages which produces useless \n
     messages = (
       @fields_are_metrics \
-        ? messages_from_event_fields(event, @include_metrics, @exclude_metrics)
-        : messages_from_event_metrics(event, @metrics)
+        ? messages_from_event_fields(event, metrics_source, @include_metrics, @exclude_metrics)
+        : messages_from_event_metrics(event, metrics_source, @metrics)
     ).compact
 
     if messages.empty?
@@ -143,29 +155,29 @@ class LogStash::Outputs::Graphite < LogStash::Outputs::Base
 
   private
 
-  def messages_from_event_fields(event, include_metrics, exclude_metrics)
+  def messages_from_event_fields(event, metrics_source, include_metrics, exclude_metrics)
     @logger.debug? && @logger.debug("got metrics event", :metrics => event.to_hash)
 
     timestamp = event_timestamp(event)
-    event.to_hash.flat_map do |metric,value|
+    metrics_source.to_hash.flat_map do |metric,value|
       next if EXCLUDE_ALWAYS.include?(metric)
       next unless include_metrics.empty? || include_metrics.any? { |regexp| metric.match(regexp) }
       next if exclude_metrics.any? {|regexp| metric.match(regexp)}
 
-      metrics_lines_for_event(event, metric, value, timestamp)
+      metrics_lines_for_event(metrics_source, metric, value, timestamp)
     end
   end
 
-  def messages_from_event_metrics(event, metrics)
+  def messages_from_event_metrics(event, metrics_source, metrics)
     timestamp = event_timestamp(event)
     metrics.flat_map do |metric, value|
       @logger.debug? && @logger.debug("processing", :metric => metric, :value => value)
 
-      metric = event.sprintf(metric)
+      metric = metrics_source.sprintf(metric)
       next unless @include_metrics.any? {|regexp| metric.match(regexp)}
       next if @exclude_metrics.any? {|regexp| metric.match(regexp)}
 
-      metrics_lines_for_event(event, metric, value, timestamp)
+      metrics_lines_for_event(metrics_source, metric, value, timestamp)
     end
   end
 
